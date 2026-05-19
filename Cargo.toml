@@ -1,7 +1,9 @@
 [package]
 name = "primordiale-rust"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 
 [dependencies]
-sdl2 = { version = "0.38.0", features = ["mixer", "ttf"] }
+sdl2 = { version = "0.38.0", features = ["mixer", "ttf", "gfx"] }
+hecs = "0.10.5"
+rand = "0.8.5"
