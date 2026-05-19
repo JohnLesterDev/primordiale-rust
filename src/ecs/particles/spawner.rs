@@ -1,14 +1,12 @@
 use hecs::CommandBuffer;
 use rand::Rng;
-use crate::ecs::particles::component::Particle;
+use crate::ecs::particles::Particle;
 use crate::ecs::particles::queue::ParticleQueue;
-use crate::ecs::shared::transform::Transform;
-use crate::ecs::shared::velocity::Velocity;
-use crate::ecs::shared::renderable::Renderable;
+use crate::ecs::shared::{Transform, Velocity, Renderable};
 use crate::engine::math::Vec2;
-use crate::engine::settings::PARTICLE_SCALE_EXPLOSION;
+use crate::engine::config::GameConfig;
 
-pub fn drain_particle_queue(queue: &mut ParticleQueue, cmd: &mut CommandBuffer) {
+pub fn drain_particle_queue(config: &GameConfig, queue: &mut ParticleQueue, cmd: &mut CommandBuffer) {
     let mut rng = rand::thread_rng();
     
     for req in queue.requests.drain(..) {
@@ -18,8 +16,8 @@ pub fn drain_particle_queue(queue: &mut ParticleQueue, cmd: &mut CommandBuffer) 
             let vx = mx * 0.5;
             let vy = my * 0.5;
 
-            let s_min = PARTICLE_SCALE_EXPLOSION.0;
-            let s_max = PARTICLE_SCALE_EXPLOSION.1;
+            let s_min = config.juice.particle_scale_explosion_min;
+            let s_max = config.juice.particle_scale_explosion_max;
             let max_lifespan = 2.0 * req.max_life_pct;
 
             cmd.spawn((

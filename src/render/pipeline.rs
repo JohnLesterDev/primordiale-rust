@@ -4,39 +4,35 @@ use sdl2::pixels::Color;
 use sdl2::rect::Rect;
 use rand::Rng;
 
-use crate::ecs::components::{Transform, Renderable, Particle};
-use crate::engine::settings::SHAKE_INTENSITY;
-use crate::resources::{DisplayDimensions, Screenshake, GamePhase};
+use crate::ecs::shared::{Transform, Renderable};
+use crate::ecs::particles::Particle;
+use crate::resources::{GamePhase, Resources};
 
 pub fn draw_world(
     world: &World,
-    display: &DisplayDimensions,
-    shake: &Screenshake,
-    phase: GamePhase,
+    res: &Resources,
     canvas: &mut WindowCanvas,
 ) {
-    let h_scale = display.height as f32;
+    let h_scale = res.display.height as f32;
+    let intensity = res.config.juice.shake_intensity;
 
-    // Screenshake offset calculation
-    let (ox, oy) = if shake.duration > 0 && phase != GamePhase::GameOver {
+    let (ox, oy) = if res.shake.duration > 0 && res.phase != GamePhase::GameOver {
         let mut rng = rand::thread_rng();
         (
-            (rng.gen_range(-SHAKE_INTENSITY..SHAKE_INTENSITY) * h_scale) as i32,
-            (rng.gen_range(-SHAKE_INTENSITY..SHAKE_INTENSITY) * h_scale) as i32,
+            (rng.gen_range(-intensity..intensity) * h_scale) as i32,
+            (rng.gen_range(-intensity..intensity) * h_scale) as i32,
         )
     } else {
         (0, 0)
     };
 
-    // Clean viewport background pass
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
 
-    if phase == GamePhase::GameOver {
+    if res.phase == GamePhase::GameOver {
         return;
     }
 
-    // Immutable queries to prevent world corruption during draw pass
     for (_, (tf, rend)) in world.query::<(&Transform, &Renderable)>().iter() {
         canvas.set_draw_color(Color::RGB(rend.color.0, rend.color.1, rend.color.2));
         canvas.fill_rect(Rect::new(

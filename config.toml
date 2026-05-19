@@ -1,0 +1,18 @@
+[window]
+target_fps = 120
+
+[physics]
+gravity = 1.2
+
+[entities]
+player_dimen = [0.04, 0.04]
+food_dimen = [0.017, 0.017]
+enemy_dimen = [0.025, 0.025]
+base_enemy_speed = 0.21
+player_lerp_speed = 16.0
+
+[juice]
+shake_intensity = 0.008
+shake_duration = 20
+particle_scale_explosion_min = 0.002
+particle_scale_explosion_max = 0.005

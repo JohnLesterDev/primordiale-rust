@@ -1,12 +1,12 @@
 use sdl2::mixer::{Chunk, Music};
 use std::collections::HashMap;
 
-pub struct AudioSystem<'a> {
+pub struct AudioSystem {
     sfx: HashMap<String, Chunk>,
-    bgm: Option<Music<'a>>, 
+    bgm: Option<Music<'static>>, 
 }
 
-impl<'a> AudioSystem<'a> {
+impl AudioSystem {
     pub fn new() -> Self {
         sdl2::mixer::init(sdl2::mixer::InitFlag::MP3).unwrap(); 
         sdl2::mixer::open_audio(44100, sdl2::mixer::AUDIO_S16LSB, 2, 2048).unwrap();

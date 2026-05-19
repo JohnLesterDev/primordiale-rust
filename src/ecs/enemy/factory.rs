@@ -1,18 +1,15 @@
 use hecs::World;
 use rand::Rng;
-use crate::ecs::enemy::component::Enemy;
-use crate::ecs::shared::transform::Transform;
-use crate::ecs::shared::velocity::Velocity;
-use crate::ecs::shared::renderable::Renderable;
-use crate::ecs::resources::GameState;
-use crate::engine::settings::{ENEMY_DIMEN, BASE_ENEMY_SPEED};
+use crate::ecs::enemy::Enemy;
+use crate::ecs::shared::{Transform, Velocity, Renderable};
+use crate::resources::Resources;
 use crate::engine::math::Vec2;
 
-pub fn spawn_enemy(world: &mut World, state: &GameState, player_pos: Vec2) {
+pub fn spawn_enemy(world: &mut World, res: &Resources, player_pos: Vec2) {
     let mut rng = rand::thread_rng();
-    let aspect_ratio = state.display_width as f32 / state.display_height as f32;
-    let ew = ENEMY_DIMEN.0;
-    let eh = ENEMY_DIMEN.1;
+    let aspect_ratio = res.display.width as f32 / res.display.height as f32;
+    let ew = res.config.entities.enemy_dimen.0;
+    let eh = res.config.entities.enemy_dimen.1;
 
     let mut pos = Vec2::zero();
     loop {
@@ -34,6 +31,6 @@ pub fn spawn_enemy(world: &mut World, state: &GameState, player_pos: Vec2) {
         Transform { pos, size: Vec2::new(ew, eh) },
         Velocity(Vec2::zero()),
         Renderable { color: (189, 25, 23) },
-        Enemy { speed: BASE_ENEMY_SPEED + (state.enemy_speed_modifier / state.display_height as f32) },
+        Enemy { speed: res.config.entities.base_enemy_speed + (res.progress.enemy_speed_modifier / res.display.height as f32) },
     ));
 }
