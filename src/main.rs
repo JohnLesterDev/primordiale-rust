@@ -1,12 +1,10 @@
-// ==> src/main.rs <==
 mod resources;
 mod engine;
 mod ecs;
+mod render;
 
 use sdl2::event::Event;
 use sdl2::keyboard::Keycode;
-use sdl2::pixels::Color;
-use sdl2::rect::Rect;
 use hecs::{World, CommandBuffer};
 
 use engine::settings::*;
@@ -15,7 +13,7 @@ use engine::audio::AudioSystem;
 use ecs::components::*;
 use ecs::resources::GameState;
 use ecs::systems::*;
-use ecs::globals::dispatch_events; // Pulled dispatcher clean into scope
+use ecs::globals::dispatch_events;
 use resources::{Resources, GamePhase};
 
 fn main() {
@@ -41,17 +39,25 @@ fn main() {
     let timer_subsystem = sdl_context.timer().unwrap();
     let initial_tick = timer_subsystem.ticks();
 
-    // 1. Instantiate the centralized Resources container
     let mut res = Resources::new(display_mode.w as u32, display_mode.h as u32, initial_tick);
 
-    // Legacy State kept alive for subsystem dependencies during Phase 1 transition.
     let mut state = GameState {
-        display_width: display_mode.w as u32, display_height: display_mode.h as u32,
-        current_level: 1, highest_level: 1, food_target: 5, enemy_count: 1,
-        is_game_over: false, start_time: initial_tick, current_tick: initial_tick,
-        elapsed_time: 0.0, shake: 0, shake_offset: Vec2::zero(),
+        display_width: display_mode.w as u32,
+        display_height: display_mode.h as u32,
+        current_level: 1,
+        highest_level: 1,
+        food_target: 5,
+        enemy_count: 1,
+        is_game_over: false,
+        start_time: initial_tick,
+        current_tick: initial_tick,
+        elapsed_time: 0.0,
+        shake: 0,
+        shake_offset: Vec2::zero(),
         mouse_pos: Vec2::new(display_mode.w as f32 / 2.0, display_mode.h as f32 / 2.0),
-        timer_text: String::new(), enemy_speed_modifier: 0.0, fps: 0.0,
+        timer_text: String::new(),
+        enemy_speed_modifier: 0.0,
+        fps: 0.0,
         events: Vec::new(),
     };
 
@@ -61,7 +67,8 @@ fn main() {
     
     world.spawn((
         Transform { pos: Vec2::new(0.0, 0.0), size: Vec2::new(pw, ph) },
-        Renderable { color: (106, 109, 115) }, Player
+        Renderable { color: (106, 109, 115) },
+        Player
     ));
 
     init_level(&mut world, &mut state);
@@ -92,19 +99,24 @@ fn main() {
                 }
                 Event::MouseButtonDown { .. } => {
                     if res.phase == GamePhase::GameOver {
+                        // Synchronize state containers on game restart
                         res.phase = GamePhase::Active;
                         res.progress.current_level = 1;
-                        res.progress.food_target = 8;
-                        res.progress.enemy_count = 2;
+                        res.progress.food_target = 5;
+                        res.progress.enemy_count = 1;
                         res.progress.enemy_speed_modifier = 0.0;
                         res.timer.elapsed_time = 0.0;
                         res.shake.duration = 0;
                         res.shake.offset = Vec2::zero();
 
                         state.is_game_over = false;
-                        state.current_level = 1; state.food_target = 8; state.enemy_count = 2; 
-                        state.enemy_speed_modifier = 0.0; state.elapsed_time = 0.0;
-                        state.shake = 0; state.shake_offset = Vec2::zero();
+                        state.current_level = 1; 
+                        state.food_target = 5; 
+                        state.enemy_count = 1; 
+                        state.enemy_speed_modifier = 0.0; 
+                        state.elapsed_time = 0.0;
+                        state.shake = 0; 
+                        state.shake_offset = Vec2::zero();
                         
                         init_level(&mut world, &mut state);
                         sdl_context.mouse().show_cursor(false);
@@ -131,13 +143,12 @@ fn main() {
                         res.phase = GamePhase::GameOver;
                     }
 
+                    // Pipe legacy collision events seamlessly to central engine dispatcher
                     if !state.events.is_empty() {
                         res.events.events.extend(state.events.drain(..));
                     }
 
-                    // Pass mutable state handle into the dispatcher pipeline
                     dispatch_events(&mut world, &mut res, &mut state, &audio, &mut cmd);
-
                     cmd.run_on(&mut world);
 
                     if state.shake > 0 {
@@ -151,42 +162,14 @@ fn main() {
             GamePhase::GameOver => {}
         }
 
-        // --- Render Pipeline ---
-        draw_world(&mut world, &state, &mut canvas);
-
-        // --- Stateless UI Pipeline ---
+        // Generate typography timestamp text representation 
         let total_ms = (res.timer.elapsed_time * 1000.0) as u32;
         res.timer.timer_text = format!("{:02}:{:02}:{:03}", total_ms / 60000, (total_ms / 1000) % 60, total_ms % 1000);
         state.timer_text = res.timer.timer_text.clone();
 
-        let texture_creator = canvas.texture_creator();
-        let mut draw_text = |text: &str, x: i32, y: i32, center: bool| {
-            if let Ok(surface) = font.render(text).blended(Color::RGB(255, 255, 255)) {
-                if let Ok(texture) = texture_creator.create_texture_from_surface(&surface) {
-                    let mut rect = Rect::new(x, y, surface.width(), surface.height());
-                    if center { 
-                        rect.x -= (surface.width() / 2) as i32; 
-                        rect.y -= (surface.height() / 2) as i32; 
-                    }
-                    canvas.copy(&texture, None, rect).ok();
-                }
-            }
-        };
-
-        match res.phase {
-            GamePhase::Active => {
-                draw_text(&format!("FPS: {:.2}", res.timer.fps), 10, 10, false);
-                draw_text(&format!("Level: {}", state.current_level), res.display.width as i32 - 250, 10, false);
-                draw_text(&res.timer.timer_text, (res.display.width / 2) as i32, 10, true);
-            }
-            GamePhase::GameOver => {
-                let cx = (res.display.width / 2) as i32;
-                let cy = (res.display.height / 2) as i32;
-                draw_text("Game Over", cx, cy - 50, true);
-                draw_text(&format!("Highest Level: {} On {}", state.highest_level, res.timer.timer_text), cx, cy, true);
-                draw_text("Click to Restart", cx, cy + 50, true);
-            }
-        }
+        // Execution of detached rendering pipelines
+        render::draw_world(&world, &res.display, &res.shake, res.phase, &mut canvas);
+        render::draw_ui(&res, &state, &mut canvas, &font);
 
         canvas.present();
     }

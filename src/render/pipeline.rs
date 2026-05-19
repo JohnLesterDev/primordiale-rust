@@ -1,5 +1,3 @@
-// src/ecs/systems/render.rs
-
 use hecs::World;
 use sdl2::render::WindowCanvas;
 use sdl2::pixels::Color;
@@ -7,13 +5,20 @@ use sdl2::rect::Rect;
 use rand::Rng;
 
 use crate::ecs::components::{Transform, Renderable, Particle};
-use crate::ecs::resources::GameState;
 use crate::engine::settings::SHAKE_INTENSITY;
+use crate::resources::{DisplayDimensions, Screenshake, GamePhase};
 
-pub fn draw_world(world: &mut World, state: &GameState, canvas: &mut WindowCanvas) {
-    let h_scale = state.display_height as f32;
+pub fn draw_world(
+    world: &World,
+    display: &DisplayDimensions,
+    shake: &Screenshake,
+    phase: GamePhase,
+    canvas: &mut WindowCanvas,
+) {
+    let h_scale = display.height as f32;
 
-    let (ox, oy) = if state.shake > 0 && !state.is_game_over {
+    // Screenshake offset calculation
+    let (ox, oy) = if shake.duration > 0 && phase != GamePhase::GameOver {
         let mut rng = rand::thread_rng();
         (
             (rng.gen_range(-SHAKE_INTENSITY..SHAKE_INTENSITY) * h_scale) as i32,
@@ -23,14 +28,16 @@ pub fn draw_world(world: &mut World, state: &GameState, canvas: &mut WindowCanva
         (0, 0)
     };
 
+    // Clean viewport background pass
     canvas.set_draw_color(Color::RGB(0, 0, 0));
     canvas.clear();
 
-    if state.is_game_over {
+    if phase == GamePhase::GameOver {
         return;
     }
 
-    for (_, (tf, rend)) in world.query_mut::<(&Transform, &Renderable)>() {
+    // Immutable queries to prevent world corruption during draw pass
+    for (_, (tf, rend)) in world.query::<(&Transform, &Renderable)>().iter() {
         canvas.set_draw_color(Color::RGB(rend.color.0, rend.color.1, rend.color.2));
         canvas.fill_rect(Rect::new(
             (tf.pos.x * h_scale) as i32 + ox,
@@ -40,7 +47,7 @@ pub fn draw_world(world: &mut World, state: &GameState, canvas: &mut WindowCanva
         )).ok();
     }
 
-    for (_, (tf, rend, part)) in world.query_mut::<(&Transform, &Renderable, &Particle)>() {
+    for (_, (tf, rend, part)) in world.query::<(&Transform, &Renderable, &Particle)>().iter() {
         canvas.set_draw_color(Color::RGB(rend.color.0, rend.color.1, rend.color.2));
         canvas.fill_rect(Rect::new(
             (tf.pos.x * h_scale) as i32 + ox,
