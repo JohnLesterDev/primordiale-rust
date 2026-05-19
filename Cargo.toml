@@ -7,3 +7,6 @@ edition = "2021"
 sdl2 = { version = "0.38.0", features = ["mixer", "ttf", "gfx"] }
 hecs = "0.10.5"
 rand = "0.8.5"
+
+serde = { version = "1.0.217", features = ["derive"] }
+toml = "0.8.19"

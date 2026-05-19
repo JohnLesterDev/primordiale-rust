@@ -1,3 +1,4 @@
 pub mod math;
-pub mod settings;
 pub mod audio;
+pub mod config;
+pub mod settings;
