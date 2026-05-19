@@ -1,4 +1,5 @@
 use crate::engine::math::Vec2;
+use super::GameEvent;
 
 pub struct GameState {
     pub display_width: u32,
@@ -16,5 +17,6 @@ pub struct GameState {
     pub mouse_pos: Vec2,
     pub timer_text: String,
     pub enemy_speed_modifier: f32,
-    pub fps: f32,        
+    pub fps: f32,
+    pub events: Vec<GameEvent>,
 }

@@ -11,8 +11,10 @@ use engine::settings::*;
 use engine::math::Vec2;
 use engine::audio::AudioSystem;
 use ecs::components::*;
-use ecs::resources::GameState;
+use ecs::resources::{GameState, GameEvent};
 use ecs::systems::*;
+
+use ecs::systems::particles::spit_particles;
 
 fn main() {
     let sdl_context = sdl2::init().unwrap();
@@ -24,16 +26,15 @@ fn main() {
     let mut canvas = window.into_canvas().present_vsync().build().unwrap();
     sdl_context.mouse().show_cursor(false);
     
-    // Initialize TrueType Fonts
     let ttf_context = sdl2::ttf::init().unwrap();
-    let font_path = "resources/font.ttf"; // CRITICAL: This file MUST exist.
+    let font_path = "resources/font.ttf";
     let font = ttf_context.load_font(font_path, 45).expect("Missing resources/font.ttf");
 
     let mut audio = AudioSystem::new();
     audio.load_sfx("eat", "resources/sfx/eat-1.wav");
     audio.load_sfx("kill", "resources/sfx/kill.wav");
     audio.load_sfx("level", "resources/sfx/level-1.wav");
-    AudioSystem::play_bgm("resources/bgm/bgm.mp3");
+    audio.play_bgm("resources/bgm/bgm.mp3");
 
     let timer_subsystem = sdl_context.timer().unwrap();
     let initial_tick = timer_subsystem.ticks();
@@ -41,18 +42,18 @@ fn main() {
     let mut state = GameState {
         display_width: display_mode.w as u32, display_height: display_mode.h as u32,
         current_level: 1, highest_level: 1, food_target: 5, enemy_count: 1,
-        is_game_over: false, 
-        start_time: initial_tick, 
-        current_tick: initial_tick,
-        elapsed_time: 0.0, // Initialized
-        shake: 0, shake_offset: Vec2::zero(),
+        is_game_over: false, start_time: initial_tick, current_tick: initial_tick,
+        elapsed_time: 0.0, shake: 0, shake_offset: Vec2::zero(),
         mouse_pos: Vec2::new(display_mode.w as f32 / 2.0, display_mode.h as f32 / 2.0),
         timer_text: String::new(), enemy_speed_modifier: 0.0, fps: 0.0,
+        events: Vec::new(),
     };
 
     let mut world = World::new();
-    let pw = PLAYER_DIMEN.0 * state.display_height as f32;
-    let ph = PLAYER_DIMEN.1 * state.display_height as f32;
+    let h_scale = state.display_height as f32;
+    let pw = PLAYER_DIMEN.0;
+    let ph = PLAYER_DIMEN.1;
+    
     world.spawn((
         Transform { pos: Vec2::new(0.0, 0.0), size: Vec2::new(pw, ph) },
         Renderable { color: (106, 109, 115) }, Player
@@ -61,15 +62,19 @@ fn main() {
     init_level(&mut world, &mut state);
 
     let mut event_pump = sdl_context.event_pump().unwrap();
-    let mut last_tick = timer_subsystem.ticks();
+    let mut last_time = timer_subsystem.ticks();
+    
+    // Fixed Timestep Core Constants
+    let time_step = 1.0 / FPS as f32; 
+    let mut accumulator = 0.0f32;
 
     'running: loop {
-        let current_tick = timer_subsystem.ticks();
-        state.current_tick = current_tick; 
-        let dt = (current_tick - last_tick) as f32 / 1000.0;
-        last_tick = current_tick;
+        let current_time = timer_subsystem.ticks();
+        let frame_time = (current_time - last_time) as f32 / 1000.0;
+        last_time = current_time;
 
-        state.fps = if dt > 0.0 { 1.0 / dt } else { 0.0 };
+        state.current_tick = current_time;
+        state.fps = if frame_time > 0.0 { 1.0 / frame_time } else { 0.0 };
 
         for event in event_pump.poll_iter() {
             match event {
@@ -78,7 +83,8 @@ fn main() {
                 Event::MouseButtonDown { .. } if state.is_game_over => {
                     state.is_game_over = false;
                     state.current_level = 1; state.food_target = 8; state.enemy_count = 2; 
-                    state.enemy_speed_modifier = 0.0; state.elapsed_time = 0.0; // Reset Time
+                    state.enemy_speed_modifier = 0.0; state.elapsed_time = 0.0;
+                    state.shake = 0; state.shake_offset = Vec2::zero();
                     init_level(&mut world, &mut state);
                     sdl_context.mouse().show_cursor(false);
                 }
@@ -86,23 +92,51 @@ fn main() {
             }
         }
 
+        // Advance deterministic physics loops via time accumulation
         if !state.is_game_over {
-            state.elapsed_time += dt; // Freeze logical timer on death
-            
-            let mut cmd = CommandBuffer::new();
-            update_ai(&mut world, &mut state, dt);
-            update_movement(&mut world, &state, dt, &mut cmd);
-            check_collisions(&mut world, &mut state, &audio, &mut cmd);
-            cmd.run_on(&mut world);
-            
-            render(&mut world, &mut state, &mut canvas);
-        } else {
-            sdl_context.mouse().show_cursor(true);
-            canvas.set_draw_color(Color::RGB(0, 0, 0)); 
-            canvas.clear(); 
+            accumulator += frame_time.min(0.25); // Avoid spiral of death on severe stutters
+
+            while accumulator >= time_step {
+                state.elapsed_time += time_step;
+                
+                let mut cmd = CommandBuffer::new();
+                update_ai(&mut world, &mut state, time_step);
+                update_movement(&mut world, &state, time_step, &mut cmd);
+                check_collisions(&mut world, &mut state, &mut cmd);
+                
+                // Centralized side effect distribution
+                for ev in state.events.drain(..) {
+                    match ev {
+                        GameEvent::Eat(pos) => {
+                            audio.play_sfx("eat");
+                            spit_particles(&mut cmd, h_scale, pos, (82, 163, 65), 100, 1.0);
+                        }
+                        GameEvent::Kill => {
+                            audio.play_sfx("kill");
+                        }
+                        GameEvent::LevelUp => {
+                            audio.play_sfx("level");
+                            let m_pos = Vec2::new(state.mouse_pos.x / h_scale, state.mouse_pos.y / h_scale);
+                            spit_particles(&mut cmd, h_scale, m_pos, (255, 255, 255), 300, 1.2);
+                        }
+                    }
+                }
+                cmd.run_on(&mut world);
+
+                // Update screenshake lifespan matching system timing
+                if state.shake > 0 {
+                    state.shake -= 1;
+                }
+
+                accumulator -= time_step;
+            }
         }
 
-        // --- HUD & Text Rendering Pipeline ---
+        // --- Render Pipeline ---
+        // Delegates screen-shake, clears, and structural entity rendering passes cleanly
+        draw_world(&mut world, &state, &mut canvas);
+
+        // --- Stateless UI Pipeline ---
         let total_ms = (state.elapsed_time * 1000.0) as u32;
         state.timer_text = format!("{:02}:{:02}:{:03}", total_ms / 60000, (total_ms / 1000) % 60, total_ms % 1000);
 
@@ -122,7 +156,7 @@ fn main() {
 
         if !state.is_game_over {
             draw_text(&format!("FPS: {:.2}", state.fps), 10, 10, false);
-            draw_text(&format!("Level: {}", state.current_level), state.display_width as i32 - 150, 10, false);
+            draw_text(&format!("Level: {}", state.current_level), state.display_width as i32 - 250, 10, false);
             draw_text(&state.timer_text, (state.display_width / 2) as i32, 10, true);
         } else {
             let cx = (state.display_width / 2) as i32;
