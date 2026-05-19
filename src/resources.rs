@@ -19,6 +19,7 @@ pub struct GameTimer {
     pub current_tick: u32,
     pub elapsed_time: f32,
     pub timer_text: String,
+    pub fps: f32,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -37,6 +38,7 @@ pub struct LevelProgress {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GamePhase {
+    Menu,
     Active,
     GameOver,
 }
@@ -52,6 +54,7 @@ pub struct Resources {
     pub particles: ParticleQueue,
     pub player_entity: Option<hecs::Entity>,
     pub config: GameConfig,
+    pub is_level_cleared: bool,
 }
 
 impl Resources {
@@ -65,10 +68,9 @@ impl Resources {
                 current_tick: initial_tick,
                 elapsed_time: 0.0,
                 timer_text: String::new(),
+                fps: 0.0,
             },
-            shake: Screenshake {
-                duration: 0,
-            },
+            shake: Screenshake { duration: 0 },
             events: EventQueue { events: Vec::new() },
             progress: LevelProgress {
                 current_level: 1,
@@ -77,10 +79,11 @@ impl Resources {
                 enemy_count: 1,
                 enemy_speed_modifier: 0.0,
             },
-            phase: GamePhase::Active,
+            phase: GamePhase::Menu, // Updated default state
             particles: ParticleQueue::new(),
             player_entity: None,
             config,
+            is_level_cleared: false,
         }
     }
 }

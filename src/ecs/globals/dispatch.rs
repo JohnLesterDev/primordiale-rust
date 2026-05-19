@@ -1,19 +1,18 @@
 use hecs::World;
 use crate::ecs::globals::event_queue::GameEvent;
-use crate::ecs::level::level_up;      
 use crate::engine::audio::AudioSystem;
 use crate::engine::math::Vec2;
 use crate::resources::{Resources, GamePhase};
 use crate::ecs::particles::queue::ParticleSpawnRequest;
 
 pub fn dispatch_events(
-    world: &mut World,
+    _world: &mut World, 
     res: &mut Resources,
     audio: &AudioSystem,
 ) {
     let h_scale = res.display.height as f32;
 
-    for event in res.events.events.drain(..).collect::<Vec<_>>() {
+    for event in res.events.events.drain(..) {
         match event {
             GameEvent::Eat(pos) => {
                 audio.play_sfx("eat");
@@ -44,7 +43,7 @@ pub fn dispatch_events(
                     max_life_pct: 1.2,
                 });
                 
-                level_up(world, res);
+                res.is_level_cleared = true;
             }
         }
     }
