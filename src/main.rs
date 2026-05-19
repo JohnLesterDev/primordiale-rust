@@ -13,11 +13,10 @@ use engine::settings::*;
 use engine::math::Vec2;
 use engine::audio::AudioSystem;
 use ecs::components::*;
-use ecs::resources::{GameState, GameEvent};
+use ecs::resources::GameState;
 use ecs::systems::*;
-use resources::{Resources, GamePhase}; // Pulled types clean into scope
-
-use ecs::systems::particles::spit_particles;
+use ecs::globals::dispatch_events; // Pulled dispatcher clean into scope
+use resources::{Resources, GamePhase};
 
 fn main() {
     let sdl_context = sdl2::init().unwrap();
@@ -42,7 +41,7 @@ fn main() {
     let timer_subsystem = sdl_context.timer().unwrap();
     let initial_tick = timer_subsystem.ticks();
 
-    // 1. Instantiate the newly introduced centralized Resources container
+    // 1. Instantiate the centralized Resources container
     let mut res = Resources::new(display_mode.w as u32, display_mode.h as u32, initial_tick);
 
     // Legacy State kept alive for subsystem dependencies during Phase 1 transition.
@@ -57,7 +56,6 @@ fn main() {
     };
 
     let mut world = World::new();
-    let h_scale = res.display.height as f32;
     let pw = PLAYER_DIMEN.0;
     let ph = PLAYER_DIMEN.1;
     
@@ -94,7 +92,6 @@ fn main() {
                 }
                 Event::MouseButtonDown { .. } => {
                     if res.phase == GamePhase::GameOver {
-                        // Reset resources container fields
                         res.phase = GamePhase::Active;
                         res.progress.current_level = 1;
                         res.progress.food_target = 8;
@@ -104,7 +101,6 @@ fn main() {
                         res.shake.duration = 0;
                         res.shake.offset = Vec2::zero();
 
-                        // Synced mirror modifications for legacy context tracking compatibility
                         state.is_game_over = false;
                         state.current_level = 1; state.food_target = 8; state.enemy_count = 2; 
                         state.enemy_speed_modifier = 0.0; state.elapsed_time = 0.0;
@@ -118,7 +114,6 @@ fn main() {
             }
         }
 
-        // 2. Control pipeline gated via explicit GamePhase match
         match res.phase {
             GamePhase::Active => {
                 accumulator += frame_time.min(0.25);
@@ -132,27 +127,17 @@ fn main() {
                     update_movement(&mut world, &state, time_step, &mut cmd);
                     check_collisions(&mut world, &mut state, &mut cmd);
                     
-                    // Direct downstream check back into Resources wrapper
                     if state.is_game_over {
                         res.phase = GamePhase::GameOver;
                     }
 
-                    for ev in state.events.drain(..) {
-                        match ev {
-                            GameEvent::Eat(pos) => {
-                                audio.play_sfx("eat");
-                                spit_particles(&mut cmd, h_scale, pos, (82, 163, 65), 100, 1.0);
-                            }
-                            GameEvent::Kill => {
-                                audio.play_sfx("kill");
-                            }
-                            GameEvent::LevelUp => {
-                                audio.play_sfx("level");
-                                let m_pos = Vec2::new(res.cursor.pos.x / h_scale, res.cursor.pos.y / h_scale);
-                                spit_particles(&mut cmd, h_scale, m_pos, (255, 255, 255), 300, 1.2);
-                            }
-                        }
+                    if !state.events.is_empty() {
+                        res.events.events.extend(state.events.drain(..));
                     }
+
+                    // Pass mutable state handle into the dispatcher pipeline
+                    dispatch_events(&mut world, &mut res, &mut state, &audio, &mut cmd);
+
                     cmd.run_on(&mut world);
 
                     if state.shake > 0 {
@@ -163,9 +148,7 @@ fn main() {
                     accumulator -= time_step;
                 }
             }
-            GamePhase::GameOver => {
-                // Physics routines completely halted during death screens
-            }
+            GamePhase::GameOver => {}
         }
 
         // --- Render Pipeline ---
@@ -190,7 +173,6 @@ fn main() {
             }
         };
 
-        // 3. UI branches matched directly on tracking GamePhase
         match res.phase {
             GamePhase::Active => {
                 draw_text(&format!("FPS: {:.2}", res.timer.fps), 10, 10, false);

@@ -1,6 +1,5 @@
-// ==> src/resources.rs <==
 use crate::engine::math::Vec2;
-use crate::ecs::resources::GameEvent;
+use crate::ecs::globals::{GameEvent, EventQueue};
 
 #[derive(Debug, Clone, Copy)]
 pub struct DisplayDimensions {
@@ -26,11 +25,6 @@ pub struct GameTimer {
 pub struct Screenshake {
     pub duration: u32,
     pub offset: Vec2,
-}
-
-#[derive(Debug, Clone)]
-pub struct EventQueue {
-    pub events: Vec<GameEvent>,
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -4,8 +4,6 @@ use crate::ecs::resources::{GameState, GameEvent};
 use crate::engine::math::Vec2;
 use crate::engine::settings::SHAKE_DURATION;
 
-use super::level::level_up;  // we import level_up from sibling module
-
 pub fn check_collisions(world: &mut World, state: &mut GameState, cmd: &mut CommandBuffer) {
     let mut player_pos = Vec2::zero();
     let mut player_size = Vec2::zero();
@@ -46,8 +44,8 @@ pub fn check_collisions(world: &mut World, state: &mut GameState, cmd: &mut Comm
         state.events.push(GameEvent::Eat(pos));
     }
 
+    // Task 8: Pure detection phase. Structural mutations are deferred out of collision.
     if is_level_cleared {
         state.events.push(GameEvent::LevelUp);
-        level_up(world, state);
     }
 }
