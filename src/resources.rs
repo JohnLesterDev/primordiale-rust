@@ -1,5 +1,6 @@
 use crate::engine::math::Vec2;
 use crate::ecs::globals::{GameEvent, EventQueue};
+use crate::ecs::particles::queue::ParticleQueue;
 
 #[derive(Debug, Clone, Copy)]
 pub struct DisplayDimensions {
@@ -49,8 +50,10 @@ pub struct Resources {
     pub timer: GameTimer,
     pub shake: Screenshake,
     pub events: EventQueue,
-    pub progress: LevelProgress,
     pub phase: GamePhase,
+    pub progress: crate::ecs::level::LevelProgress,
+    // New global resource registry allocation
+    pub particles: ParticleQueue,
 }
 
 impl Resources {
@@ -72,7 +75,7 @@ impl Resources {
                 offset: Vec2::zero(),
             },
             events: EventQueue { events: Vec::new() },
-            progress: LevelProgress {
+            progress: crate::ecs::level::LevelProgress {
                 current_level: 1,
                 highest_level: 1,
                 food_target: 5,
@@ -80,6 +83,7 @@ impl Resources {
                 enemy_speed_modifier: 0.0,
             },
             phase: GamePhase::Active,
+            particles: crate::ecs::particles::queue::ParticleQueue::new(),
         }
     }
 }

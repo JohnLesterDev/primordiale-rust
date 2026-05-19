@@ -1,15 +1,9 @@
-mod transform;
-mod velocity;
-mod renderable;
-mod player;
-mod food;
-mod enemy;
-mod particle;
+pub use crate::ecs::shared::transform::Transform;
+pub use crate::ecs::shared::velocity::Velocity;
+pub use crate::ecs::shared::renderable::Renderable;
+pub use crate::ecs::player::component::Player;
+pub use crate::ecs::enemy::component::Enemy;
+pub use crate::ecs::food::component::Food;
 
-pub use transform::Transform;
-pub use velocity::Velocity;
-pub use renderable::Renderable;
-pub use player::Player;
-pub use food::Food;
-pub use enemy::Enemy;
-pub use particle::Particle;
+// Backward-compatible re-export link
+pub use crate::ecs::particles::component::Particle;

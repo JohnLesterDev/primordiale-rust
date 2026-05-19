@@ -10,9 +10,11 @@ use hecs::{World, CommandBuffer};
 use engine::settings::*;
 use engine::math::Vec2;
 use engine::audio::AudioSystem;
-use ecs::components::*;
-use ecs::resources::GameState;
-use ecs::systems::*;
+use ecs::level::{init_level, level_up};
+use ecs::player::update_player_movement;
+use ecs::food::update_food_movement;
+use ecs::enemy::update_ai;
+use ecs::particles::{update_particles, drain_particle_queue};
 use ecs::globals::dispatch_events;
 use resources::{Resources, GamePhase};
 
@@ -40,38 +42,10 @@ fn main() {
     let initial_tick = timer_subsystem.ticks();
 
     let mut res = Resources::new(display_mode.w as u32, display_mode.h as u32, initial_tick);
-
-    let mut state = GameState {
-        display_width: display_mode.w as u32,
-        display_height: display_mode.h as u32,
-        current_level: 1,
-        highest_level: 1,
-        food_target: 5,
-        enemy_count: 1,
-        is_game_over: false,
-        start_time: initial_tick,
-        current_tick: initial_tick,
-        elapsed_time: 0.0,
-        shake: 0,
-        shake_offset: Vec2::zero(),
-        mouse_pos: Vec2::new(display_mode.w as f32 / 2.0, display_mode.h as f32 / 2.0),
-        timer_text: String::new(),
-        enemy_speed_modifier: 0.0,
-        fps: 0.0,
-        events: Vec::new(),
-    };
-
     let mut world = World::new();
-    let pw = PLAYER_DIMEN.0;
-    let ph = PLAYER_DIMEN.1;
-    
-    world.spawn((
-        Transform { pos: Vec2::new(0.0, 0.0), size: Vec2::new(pw, ph) },
-        Renderable { color: (106, 109, 115) },
-        Player
-    ));
 
-    init_level(&mut world, &mut state);
+    ecs::player::spawn_player(&mut world);  
+    init_level(&mut world, &mut res);
 
     let mut event_pump = sdl_context.event_pump().unwrap();
     let mut last_time = timer_subsystem.ticks();
@@ -85,40 +59,27 @@ fn main() {
         last_time = current_time;
 
         res.timer.current_tick = current_time;
-        state.current_tick = current_time;
-        
         res.timer.fps = if frame_time > 0.0 { 1.0 / frame_time } else { 0.0 };
-        state.fps = res.timer.fps;
 
         for event in event_pump.poll_iter() {
             match event {
                 Event::Quit { .. } | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => break 'running,
                 Event::MouseMotion { x, y, .. } => {
                     res.cursor.pos = Vec2::new(x as f32, y as f32);
-                    state.mouse_pos = res.cursor.pos;
                 }
                 Event::MouseButtonDown { .. } => {
                     if res.phase == GamePhase::GameOver {
-                        // Synchronize state containers on game restart
                         res.phase = GamePhase::Active;
                         res.progress.current_level = 1;
+                        res.progress.highest_level = res.progress.highest_level.max(1);
                         res.progress.food_target = 5;
                         res.progress.enemy_count = 1;
                         res.progress.enemy_speed_modifier = 0.0;
                         res.timer.elapsed_time = 0.0;
                         res.shake.duration = 0;
                         res.shake.offset = Vec2::zero();
-
-                        state.is_game_over = false;
-                        state.current_level = 1; 
-                        state.food_target = 5; 
-                        state.enemy_count = 1; 
-                        state.enemy_speed_modifier = 0.0; 
-                        state.elapsed_time = 0.0;
-                        state.shake = 0; 
-                        state.shake_offset = Vec2::zero();
                         
-                        init_level(&mut world, &mut state);
+                        init_level(&mut world, &mut res);
                         sdl_context.mouse().show_cursor(false);
                     }
                 }
@@ -132,28 +93,66 @@ fn main() {
 
                 while accumulator >= time_step {
                     res.timer.elapsed_time += time_step;
-                    state.elapsed_time = res.timer.elapsed_time;
                     
                     let mut cmd = CommandBuffer::new();
-                    update_ai(&mut world, &mut state, time_step);
-                    update_movement(&mut world, &state, time_step, &mut cmd);
-                    check_collisions(&mut world, &mut state, &mut cmd);
                     
-                    if state.is_game_over {
-                        res.phase = GamePhase::GameOver;
+                    update_ai(&mut world);
+                    update_player_movement(&mut world, &res, time_step);
+                    update_food_movement(&mut world, &res, time_step);
+                    
+                    // Direct explicit loops handle moving entity calculations
+                    for (_, (tf, vel, _e)) in world.query_mut::<(&mut ecs::shared::Transform, &ecs::shared::Velocity, &ecs::enemy::Enemy)>() {
+                        tf.pos += vel.0 * time_step;
+                    }
+                    
+                    update_particles(&mut world, time_step, &mut cmd);
+                    
+                    // Inline geometric processing bypasses the deleted collision system
+                    let mut player_pos = Vec2::zero();
+                    let mut player_size = Vec2::zero();
+                    for (_, (tf, _p)) in world.query_mut::<(&ecs::shared::Transform, &ecs::player::Player)>() {
+                        player_pos = tf.pos;
+                        player_size = tf.size;
                     }
 
-                    // Pipe legacy collision events seamlessly to central engine dispatcher
-                    if !state.events.is_empty() {
-                        res.events.events.extend(state.events.drain(..));
+                    let intersects = |p1: Vec2, s1: Vec2, p2: Vec2, s2: Vec2| -> bool {
+                        p1.x < p2.x + s2.x && p1.x + s1.x > p2.x && p1.y < p2.y + s2.y && p1.y + s1.y > p2.y
+                    };
+
+                    for (_, (tf, _)) in world.query_mut::<(&ecs::shared::Transform, &ecs::enemy::Enemy)>() {
+                        if intersects(player_pos, player_size, tf.pos, tf.size) {
+                            res.events.events.push(ecs::globals::GameEvent::Kill);
+                        }
                     }
 
-                    dispatch_events(&mut world, &mut res, &mut state, &audio, &mut cmd);
+                    let mut eaten_foods = Vec::new();
+                    for (ent, (tf, _f)) in world.query_mut::<(&ecs::shared::Transform, &ecs::food::Food)>() {
+                        if intersects(player_pos, player_size, tf.pos, tf.size) {
+                            eaten_foods.push((ent, tf.pos));
+                        }
+                    }
+
+                    let total_food = world.query::<&ecs::food::Food>().iter().count();
+                    let ate_count = eaten_foods.len();
+                    let is_level_cleared = ate_count > 0 && total_food <= ate_count;
+
+                    for (ent, pos) in eaten_foods {
+                        cmd.despawn(ent);
+                        res.shake.duration = SHAKE_DURATION;   
+                        res.events.events.push(ecs::globals::GameEvent::Eat(pos));
+                    }
+
+                    if is_level_cleared {
+                        res.events.events.push(ecs::globals::GameEvent::LevelUp);
+                    }
+
+                    dispatch_events(&mut world, &mut res, &audio);
+                    
+                    drain_particle_queue(&mut res.particles, &mut cmd);
                     cmd.run_on(&mut world);
 
-                    if state.shake > 0 {
-                        state.shake -= 1;
-                        res.shake.duration = state.shake;
+                    if res.shake.duration > 0 {
+                        res.shake.duration -= 1;
                     }
 
                     accumulator -= time_step;
@@ -162,14 +161,11 @@ fn main() {
             GamePhase::GameOver => {}
         }
 
-        // Generate typography timestamp text representation 
         let total_ms = (res.timer.elapsed_time * 1000.0) as u32;
         res.timer.timer_text = format!("{:02}:{:02}:{:03}", total_ms / 60000, (total_ms / 1000) % 60, total_ms % 1000);
-        state.timer_text = res.timer.timer_text.clone();
 
-        // Execution of detached rendering pipelines
         render::draw_world(&world, &res.display, &res.shake, res.phase, &mut canvas);
-        render::draw_ui(&res, &state, &mut canvas, &font);
+        render::draw_ui(&res, &mut canvas, &font);
 
         canvas.present();
     }

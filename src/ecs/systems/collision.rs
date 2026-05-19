@@ -1,6 +1,10 @@
 use hecs::{World, CommandBuffer};
-use crate::ecs::components::*;
-use crate::ecs::resources::{GameState, GameEvent};
+use crate::ecs::player::component::Player;
+use crate::ecs::enemy::component::Enemy;
+use crate::ecs::food::component::Food;
+use crate::ecs::shared::transform::Transform;
+use crate::ecs::resources::GameState;
+use crate::ecs::globals::event_queue::GameEvent;
 use crate::engine::math::Vec2;
 use crate::engine::settings::SHAKE_DURATION;
 
@@ -17,7 +21,7 @@ pub fn check_collisions(world: &mut World, state: &mut GameState, cmd: &mut Comm
         p1.x < p2.x + s2.x && p1.x + s1.x > p2.x && p1.y < p2.y + s2.y && p1.y + s1.y > p2.y
     };
 
-    // Enemy collisions
+    // Player vs Enemy
     for (_, (tf, _)) in world.query_mut::<(&Transform, &Enemy)>() {
         if intersects(player_pos, player_size, tf.pos, tf.size) {
             state.is_game_over = true;
@@ -26,7 +30,7 @@ pub fn check_collisions(world: &mut World, state: &mut GameState, cmd: &mut Comm
         }
     }
 
-    // Food collisions
+    // Player vs Food
     let mut eaten_foods = Vec::new();
     for (ent, (tf, _f)) in world.query_mut::<(&Transform, &Food)>() {
         if intersects(player_pos, player_size, tf.pos, tf.size) {
@@ -44,7 +48,6 @@ pub fn check_collisions(world: &mut World, state: &mut GameState, cmd: &mut Comm
         state.events.push(GameEvent::Eat(pos));
     }
 
-    // Task 8: Pure detection phase. Structural mutations are deferred out of collision.
     if is_level_cleared {
         state.events.push(GameEvent::LevelUp);
     }
